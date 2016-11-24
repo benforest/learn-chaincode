@@ -19,6 +19,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"encoding/json"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
@@ -27,6 +28,17 @@ import (
 type SimpleChaincode struct {
 }
 
+type Account struct{
+	Name string  `json:"name"`
+	Role string `json:"role"`
+	Balance 		float64 `json:"balance"`
+}
+
+type Transaction struct {
+	FromName string   `json:"fromName"`
+	ToName   string   `json:"toName"`
+	Quantity int `json:"quantity"`
+}
 // ============================================================================================================================
 // Main
 // ============================================================================================================================
@@ -54,9 +66,158 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function stri
 	if function == "init" {													//initialize the chaincode state, used as reset
 		return t.Init(stub, "init", args)
 	}
+	fmt.Println("Invoke running. Function: " + function)
+
+	if function == "transfer" {
+		return t.transfer(stub, args)
+	}  else if function == "createAccount" {
+		return t.createAccount(stub, args)
+	}
+
 	fmt.Println("invoke did not find func: " + function)					//error
 
 	return nil, errors.New("Received unknown function invocation: " + function)
+}
+
+func (t *SimpleChaincode) createAccount(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
+	/*		0
+		json
+	  	{
+			  "name":"",
+			  "role":"",
+			  "balance": ""
+		}
+	*/
+	//need one argfmt.Println("Creating account")
+	if len(args) != 1 {
+		fmt.Println("Error obtaining user")
+		return nil, errors.New("createAccount accepts a Account argument")
+	}
+
+	var account Account
+
+	fmt.Println("Unmarshalling Account")
+	err := json.Unmarshal([]byte(args[0]), &account)
+	if err != nil {
+			fmt.Println("Error Unmarshalling Account")
+			return nil, errors.New("Invalid Account")
+	}
+
+	accountBytes, err := json.Marshal(&account)
+	fmt.Println("initializing account.")
+		err = stub.PutState(account.Name, accountBytes)
+
+		if err == nil {
+			fmt.Println("created account" + account.Name)
+			return nil, nil
+		} else {
+			fmt.Println("failed to create initialize account for " + account.Name)
+			return nil, errors.New("failed to initialize an account for " + account.Name + " => " + err.Error())
+		}
+}
+
+func (t *SimpleChaincode) transfer(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
+	fmt.Println("Transferring Money")
+	/*		0
+		json
+	  	{
+			  "fromName":"",
+			  "toName":"",
+			  "quantity": ""
+		}
+	*/
+	//need one arg
+	if len(args) != 1 {
+		return nil, errors.New("Incorrect number of arguments. Expecting transaction")
+	}
+
+	var tr Transaction
+
+	fmt.Println("Unmarshalling Transaction")
+	err := json.Unmarshal([]byte(args[0]), &tr)
+	if err != nil {
+			fmt.Println("Error Unmarshalling Transaction")
+			return nil, errors.New("Invalid Transaction")
+	}
+
+	var fromAccount Account
+	fmt.Println("Getting State on sender " + tr.FromName)
+	fromBytes, err := stub.GetState(tr.FromName)
+	if err != nil {
+		fmt.Println("fromName not found")
+		return nil, errors.New("fromName not found" + tr.FromName)
+	}
+	fmt.Println("Unmarshalling FromAccount ")
+	err = json.Unmarshal(fromBytes, &fromAccount)
+	if err != nil {
+		fmt.Println("Error unmarshalling account " + tr.FromName)
+		return nil, errors.New("Error unmarshalling account " + tr.FromName)
+	}
+
+	var toAccount Account
+	fmt.Println("Getting State on ToAccount " + tr.ToName)
+	toBytes, err := stub.GetState(tr.ToName)
+	if err != nil {
+		fmt.Println("Account not found " + tr.ToName)
+		return nil, errors.New("Account not found " + tr.ToName)
+	}
+	fmt.Println("Unmarshalling ToAccount")
+	err = json.Unmarshal(toBytes, &toAccount)
+	if err != nil {
+		fmt.Println("Error unmarshalling account " + tr.ToName)
+		return nil, errors.New("Error unmarshalling account " + tr.ToName)
+	}
+
+	amountToBeTransferred := float64(tr.Quantity)
+
+	if fromAccount.Balance < amountToBeTransferred {
+		fmt.Println("The FromAccount " + tr.FromName + "doesn't have enough to transfer")
+		return nil, errors.New("The FromAccount " + tr.FromName + "doesn't have enough to transfer")
+	} else {
+		fmt.Println("The FromAccount has enough to be transferred")
+	}
+
+	toAccount.Balance -= amountToBeTransferred
+	fromAccount.Balance += amountToBeTransferred
+
+	fromBytesToWrite, err := json.Marshal(&fromAccount)
+		if err != nil {
+			fmt.Println("Error marshalling the fromAccount")
+			return nil, errors.New("Error marshalling the fromAccount")
+		}
+		fmt.Println("Put state on fromAccount")
+		err = stub.PutState(tr.FromName, fromBytesToWrite)
+		if err != nil {
+			fmt.Println("Error writing the fromAccount back")
+			return nil, errors.New("Error writing the fromAccount back")
+	}
+
+	toBytesToWrite, err := json.Marshal(&toAccount)
+	if err != nil {
+		fmt.Println("Error marshalling the toAccount")
+		return nil, errors.New("Error marshalling the toAccount")
+	}
+	fmt.Println("Put state on toAccount")
+	err = stub.PutState(tr.ToName, toBytesToWrite)
+	if err != nil {
+		fmt.Println("Error writing the toAccount back")
+		return nil, errors.New("Error writing the toAccount back")
+	}
+
+	transactionToWrite, err := json.Marshal(&tr)
+	if err != nil {
+		fmt.Println("Error marshalling the transaction")
+		return nil, errors.New("Error marshalling the transaction")
+	}
+	fmt.Println("Put state on transaction")
+	err = stub.PutState(tr.FromName, transactionToWrite)
+	if err != nil {
+		fmt.Println("Error writing the transaction back")
+		return nil, errors.New("Error writing the transaction back")
+	}
+
+	fmt.Println("Successfully completed Invoke")
+	return nil, nil
 }
 
 // Query is our entry point for queries
@@ -64,11 +225,74 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 	fmt.Println("query is running " + function)
 
 	// Handle different functions
-	if function == "dummy_query" {											//read a variable
-		fmt.Println("hi there " + function)						//error
-		return nil, nil;
-	}
-	fmt.Println("query did not find func: " + function)						//error
+	if function == "getAccount" {
+	 fmt.Println("Getting particular account")
+	 account, err := t.getAccount(args[0], stub)
+	 if err != nil {
+		 fmt.Println("Error Getting particular account")
+		 return nil, err
+	 } else {
+		 accountBytes, err1 := json.Marshal(&account)
+		 if err1 != nil {
+			 fmt.Println("Error marshalling the account")
+			 return nil, err1
+		 }
+		 fmt.Println("All success, returning the account")
+		 return accountBytes, nil
+	 }
+ }
 
+	 if function == "getTransaction" {
+ 	 fmt.Println("Getting particular transaction")
+ 	 transaction, err := t.getTransaction(args[0], stub)
+ 	 if err != nil {
+ 		 fmt.Println("Error Getting particular transaction")
+ 		 return nil, err
+ 	 } else {
+ 		 transactionBytes, err1 := json.Marshal(&transaction)
+ 		 if err1 != nil {
+ 			 fmt.Println("Error marshalling the transaction")
+ 			 return nil, err1
+ 		 }
+ 		 fmt.Println("All success, returning the transaction")
+ 		 return transactionBytes, nil
+ 	 }
+ }
 	return nil, errors.New("Received unknown function query: " + function)
+}
+
+func (t *SimpleChaincode) getAccount(accountName string, stub shim.ChaincodeStubInterface) (Account, error) {
+	var account Account
+
+	accountBytes, err := stub.GetState(accountName)
+	if err != nil {
+		fmt.Println("Error retrieving account " + accountName)
+		return account, errors.New("Error retrieving account " + accountName)
+	}
+
+	err = json.Unmarshal(accountBytes, &account)
+	if err != nil {
+		fmt.Println("Error unmarshalling account " + accountName)
+		return account, errors.New("Error unmarshalling account " + accountName)
+	}
+
+	return account, nil
+}
+
+func (t *SimpleChaincode) getTransaction(transactionName string, stub shim.ChaincodeStubInterface) (Transaction, error) {
+	var transaction Transaction
+
+	transactionBytes, err := stub.GetState(transactionName)
+	if err != nil {
+		fmt.Println("Error retrieving account " + transactionName)
+		return transaction, errors.New("Error retrieving account " + transactionName)
+	}
+
+	err = json.Unmarshal(transactionBytes, &transaction)
+	if err != nil {
+		fmt.Println("Error unmarshalling account " + transactionName)
+		return transaction, errors.New("Error unmarshalling account " + transactionName)
+	}
+
+	return transaction, nil
 }
