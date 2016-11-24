@@ -227,7 +227,7 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 	// Handle different functions
 	if function == "getAccount" {
 	 fmt.Println("Getting particular account")
-	 account, err := getAccount(args[0], stub)
+	 account, err := t.getAccount(args[0], stub)
 	 if err != nil {
 		 fmt.Println("Error Getting particular account")
 		 return nil, err
@@ -244,7 +244,7 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 
 	 if function == "getTransaction" {
  	 fmt.Println("Getting particular transaction")
- 	 transaction, err := getTransaction(args[0], stub)
+ 	 transaction, err := t.getTransaction(args[0], stub)
  	 if err != nil {
  		 fmt.Println("Error Getting particular transaction")
  		 return nil, err
@@ -261,7 +261,7 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 	return nil, errors.New("Received unknown function query: " + function)
 }
 
-func getAccount(accountName string, stub shim.ChaincodeStubInterface) (Account, error) {
+func (t *SimpleChaincode) getAccount(accountName string, stub shim.ChaincodeStubInterface) (Account, error) {
 	var account Account
 
 	accountBytes, err := stub.GetState(accountName)
@@ -279,7 +279,7 @@ func getAccount(accountName string, stub shim.ChaincodeStubInterface) (Account, 
 	return account, nil
 }
 
-func getTransaction(transactionName string, stub shim.ChaincodeStubInterface) (Transaction, error) {
+func (t *SimpleChaincode) getTransaction(transactionName string, stub shim.ChaincodeStubInterface) (Transaction, error) {
 	var transaction Transaction
 
 	transactionBytes, err := stub.GetState(transactionName)
