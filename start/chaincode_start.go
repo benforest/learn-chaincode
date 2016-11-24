@@ -273,7 +273,7 @@ func (t *SimpleChaincode) getAccount(accountName string, stub shim.ChaincodeStub
 	err = json.Unmarshal(accountBytes, &account)
 	if err != nil {
 		fmt.Println("Error unmarshalling account " + accountName)
-		return account, errors.New("Error unmarshalling account " + accountName)
+		return account, err
 	}
 
 	return account, nil
