@@ -20,7 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"encoding/json"
-
+	"strings"
+	"time"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
 
@@ -54,7 +55,13 @@ func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface, function string
 	if len(args) != 1 {
 		return nil, errors.New("Incorrect number of arguments. Expecting 1")
 	}
-
+	fmt.Println("Initializing Transaction keys collection")
+		var blank []string
+		blankBytes, _ := json.Marshal(&blank)
+		err := stub.PutState("Keys", blankBytes)
+		if err != nil {
+			fmt.Println("Failed to initialize keys collection")
+	}
 	return nil, nil
 }
 
@@ -169,15 +176,15 @@ func (t *SimpleChaincode) transfer(stub shim.ChaincodeStubInterface, args []stri
 	}
 
 
-	if fromAccount.Balance < tr.Quantity {
+	if fromAccount.Balance < float64(tr.Quantity) {
 		fmt.Println("The FromAccount " + tr.FromName + "doesn't have enough to transfer")
 		return nil, errors.New("The FromAccount " + tr.FromName + "doesn't have enough to transfer")
 	} else {
 		fmt.Println("The FromAccount has enough to be transferred")
 	}
 
-	toAccount.Balance += tr.Quantity
-	fromAccount.Balance -= tr.Quantity
+	toAccount.Balance += float64(tr.Quantity)
+	fromAccount.Balance -= float64(tr.Quantity)
 
 	fromBytesToWrite, err := json.Marshal(&fromAccount)
 		if err != nil {
@@ -203,13 +210,40 @@ func (t *SimpleChaincode) transfer(stub shim.ChaincodeStubInterface, args []stri
 		return nil, errors.New("Error writing the toAccount back")
 	}
 
+	// Update the paper keys by adding the new key
+			fmt.Println("Getting transaction Keys")
+			keysBytes, err := stub.GetState("Keys")
+			if err != nil {
+				fmt.Println("Error retrieving transaction keys")
+				return nil, errors.New("Error retrieving transaction keys")
+			}
+			var keys []string
+			err = json.Unmarshal(keysBytes, &keys)
+			if err != nil {
+				fmt.Println("Error unmarshel keys")
+				return nil, errors.New("Error unmarshalling transaction keys ")
+			}
+			newkey := tr.FromName + time.Now().String()
+			keys = append(keys,newkey)
+			keysBytesToWrite, err := json.Marshal(&keys)
+			if err != nil {
+				fmt.Println("Error marshalling keys")
+				return nil, errors.New("Error marshalling the keys")
+			}
+			fmt.Println("Put state on PaperKeys")
+			err = stub.PutState("Keys", keysBytesToWrite)
+			if err != nil {
+				fmt.Println("Error writting keys back")
+				return nil, errors.New("Error writing the keys back")
+			}
+
 	transactionToWrite, err := json.Marshal(&tr)
 	if err != nil {
 		fmt.Println("Error marshalling the transaction")
 		return nil, errors.New("Error marshalling the transaction")
 	}
 	fmt.Println("Put state on transaction")
-	err = stub.PutState(tr.FromName, transactionToWrite)
+	err = stub.PutState(newkey, transactionToWrite)
 	if err != nil {
 		fmt.Println("Error writing the transaction back")
 		return nil, errors.New("Error writing the transaction back")
@@ -278,20 +312,40 @@ func (t *SimpleChaincode) getAccount(accountName string, stub shim.ChaincodeStub
 	return account, nil
 }
 
-func (t *SimpleChaincode) getTransaction(transactionName string, stub shim.ChaincodeStubInterface) (Transaction, error) {
-	var transaction Transaction
+func (t *SimpleChaincode) getTransaction(fromName string, stub shim.ChaincodeStubInterface) ([]Transaction, error) {
 
-	transactionBytes, err := stub.GetState(transactionName)
+	var transactions []Transaction
+
+	// Get list of all the keys
+	keysBytes, err := stub.GetState("Keys")
 	if err != nil {
-		fmt.Println("Error retrieving account " + transactionName)
-		return transaction, errors.New("Error retrieving account " + transactionName)
+		fmt.Println("Error retrieving transaction keys")
+		return nil, errors.New("Error retrieving transaction keys")
+	}
+	var keys []string
+	err = json.Unmarshal(keysBytes, &keys)
+	if err != nil {
+		fmt.Println("Error unmarshalling transaction keys")
+		return nil, errors.New("Error unmarshalling transaction keys")
 	}
 
-	err = json.Unmarshal(transactionBytes, &transaction)
-	if err != nil {
-		fmt.Println("Error unmarshalling account " + transactionName)
-		return transaction, errors.New("Error unmarshalling account " + transactionName)
+	for _, value := range keys {
+			if strings.HasPrefix(value,fromName) {
+				transactionBytes, err := stub.GetState(value)
+				if err != nil {
+					fmt.Println("Error retrieving transaction " + fromName)
+					return transactions, errors.New("Error retrieving transaction " + fromName)
+				}
+				var tr Transaction
+				err = json.Unmarshal(transactionBytes, &tr)
+				if err != nil {
+					fmt.Println("Error unmarshalling transaction " + fromName)
+					return transactions, errors.New("Error unmarshalling transaction " + fromName)
+				}
+				fmt.Println("Appending transaction" + value)
+				transactions = append(transactions, tr)
+			}
 	}
 
-	return transaction, nil
+	return transactions, nil
 }
