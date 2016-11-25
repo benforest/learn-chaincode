@@ -37,7 +37,7 @@ type Account struct{
 type Transaction struct {
 	FromName string   `json:"fromName"`
 	ToName   string   `json:"toName"`
-	Quantity int `json:"quantity"`
+	Quantity float64 `json:"quantity"`
 }
 // ============================================================================================================================
 // Main
@@ -168,17 +168,16 @@ func (t *SimpleChaincode) transfer(stub shim.ChaincodeStubInterface, args []stri
 		return nil, errors.New("Error unmarshalling account " + tr.ToName)
 	}
 
-	amountToBeTransferred := float64(tr.Quantity)
 
-	if fromAccount.Balance < amountToBeTransferred {
+	if fromAccount.Balance < tr.Quantity {
 		fmt.Println("The FromAccount " + tr.FromName + "doesn't have enough to transfer")
 		return nil, errors.New("The FromAccount " + tr.FromName + "doesn't have enough to transfer")
 	} else {
 		fmt.Println("The FromAccount has enough to be transferred")
 	}
 
-	toAccount.Balance -= amountToBeTransferred
-	fromAccount.Balance += amountToBeTransferred
+	toAccount.Balance += tr.Quantity
+	fromAccount.Balance -= tr.Quantity
 
 	fromBytesToWrite, err := json.Marshal(&fromAccount)
 		if err != nil {
